@@ -72,5 +72,9 @@ This stages `1,631` files (`891` `Voice/` `.bars.zs`, `67` `Sound/` `NV_*.bars.z
 - [Troubleshooting](docs/troubleshooting.md) — common setup, dump completeness, and Longshot log checks.
 - [Contributing](CONTRIBUTING.md) — development setup, running unit tests, and PR guidelines.
 
+# AI Disclosure
+AI was used to reverse-engineer the ROM and implementation of the scripts. I am responsible for the discovery, planning, decisions, and quality assurance.
+Models used: Opus 5.5 & Gemini 4 Neon.
+
 ## License
 Released under the [MIT License](LICENSE).
