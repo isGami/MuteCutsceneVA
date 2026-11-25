@@ -1,0 +1,10 @@
+[project]
+name = "mute-cutscene-va"
+version = "0.1.0"
+description = "RomFS mod for Ocarina of Time (Switch 2 / Longshot) that mutes voice-acted cutscene dialogue while preserving gameplay sounds."
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+dependencies = [
+    "zstandard>=0.25.0",
+]
