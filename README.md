@@ -1,11 +1,13 @@
 # MuteCutsceneVA
 
-A RomFS mod builder for *The Legend of Zelda: Ocarina of Time (Switch 2)* (`0400486024DEC000`, Ver. 1.1.1) on **[Longshot](https://git.magicbean.dev/MagicBeanDev/Longshot)** that mutes voice-acted cutscene dialogue across all 9 voice languages while keeping classic gameplay audio intact.
+A RomFS mod builder for *The Legend of Zelda: Ocarina of Time (Switch 2)* (`0400486024DEC000`, Ver. 1.1.1) on **[Longshot](https://git.magicbean.dev/MagicBeanDev/Longshot)**, Switch 2 emulators (e.g., Lichii), and `.nup` patchers that mutes voice-acted cutscene dialogue across all 9 voice languages while keeping classic gameplay audio intact.
 
 ## What Is Muted vs. Preserved
 - **Muted:**
   - All cutscene dialogue archives (`Voice/Resource/*_EventFlowMsg-_Dm_*.bars.zs`, `891` archives across all languages).
   - All cutscene voice clips mixed into character archives (`Sound/Resource/Stream/NV_*_Dm_*_SpNN.bwav`, `672` clips, and their matching prefetch entries inside `67` `Sound/Resource/NV_*.bars.zs` archives).
+- **Patched for Emulator / `.nup` Compatibility:**
+  - `System/Resource/ResourceSizeTable.Product.111.Nin_Ounce_NVN2.rsizetable.zs` (`891` grown `Voice/` `.bars.zs` entries raised; all other `219,077` CRC entries and `10` name-table entries preserved verbatim).
 - **Preserved:**
   - Link's gameplay grunts and efforts (`Vo_*`).
   - Non-cutscene NPC reactions and grunts (non-`Dm_` `NV_*` clips).
@@ -14,7 +16,7 @@ A RomFS mod builder for *The Legend of Zelda: Ocarina of Time (Switch 2)* (`0400
 
 ## Requirements
 - Python `3.12+` and **[uv](https://docs.astral.sh/uv/)**
-- A complete, unpacked OOTNS2 RomFS directory (must include `Voice/` and `Pack/ZsDic.pack.zs`)
+- A complete, unpacked OOTNS2 RomFS directory (must include `Voice/`, `Pack/ZsDic.pack.zs`, and `System/Resource/ResourceSizeTable.*.rsizetable.zs`)
 
 ## Building
 
@@ -24,7 +26,7 @@ Clone the repository and run `build_mod.py` pointing `--romfs` (or the `OOT_ROMF
 uv run scripts/build_mod.py --romfs /path/to/ootns2/romfs
 ```
 
-This stages the mod to `dist/MuteCutsceneVA/romfs/` and writes audit reports to `reports/build_audit.txt` and `reports/build_audit.json`.
+This stages `1,631` files (`891` `Voice/` `.bars.zs`, `67` `Sound/` `NV_*.bars.zs`, `672` `Sound/` `NV_*.bwav`, and `1` patched `System/Resource/ResourceSizeTable.Product.111.Nin_Ounce_NVN2.rsizetable.zs`) to `dist/MuteCutsceneVA/romfs/` and writes audit reports to `reports/build_audit.txt` and `reports/build_audit.json`.
 
 ### Optional Flags
 - **Sync directly into Longshot's `mods/` folder:**
@@ -32,6 +34,12 @@ This stages the mod to `dist/MuteCutsceneVA/romfs/` and writes audit reports to 
   uv run scripts/build_mod.py \
     --romfs /path/to/ootns2/romfs \
     --sync-to /path/to/longshot_game_dir/mods/MuteCutsceneVA/romfs
+  ```
+- **Omit `ResourceSizeTable` (Longshot-only or external RESTBL merger):**
+  ```bash
+  uv run scripts/build_mod.py \
+    --romfs /path/to/ootns2/romfs \
+    --no-restbl
   ```
 - **Test a single cutscene first** (comma-separated substring filter):
   ```bash
@@ -50,8 +58,13 @@ This stages the mod to `dist/MuteCutsceneVA/romfs/` and writes audit reports to 
 3. Check `logs/longshot_log.txt` in your game folder for:
    ```text
    mods: MuteCutsceneVA: 1630 RomFS files (1630 replace the game's, 0 added)
+   mods: resource size table: 1 tables of mods merged (891 entries), 0 entries raised for mod files (0 added files estimated), served from modcache, ...
    ```
-   Longshot merges `ResourceSizeTable` (`RESTBL`) entries automatically at boot, so no manual RESTBL patching is required.
+   Longshot automatically merges our patched `ResourceSizeTable` with any other enabled mods (or you can pass `--no-restbl` for a Longshot-only build).
+
+## Installing in Switch 2 Emulators (e.g., Lichii) / `.nup` Patchers
+1. Use the staged `dist/MuteCutsceneVA/romfs/` folder directly as your emulator RomFS mod or `.nup` patcher input—it already includes the patched `System/Resource/ResourceSizeTable.Product.111.Nin_Ounce_NVN2.rsizetable.zs`.
+2. If you stack multiple RomFS mods that also modify `ResourceSizeTable`, build with `--no-restbl` and merge `ResourceSizeTable` externally (or merge the tables with your mod manager).
 
 ## Documentation
 - [Architecture & Mod Design](docs/architecture.md) — how `Voice/` embedding, `NV_` prefetch silencing, `BARS`/`AMTA v5`, and `RESTBL` work.

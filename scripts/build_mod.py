@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
-"""Build the MuteCutsceneVA RomFS mod for OOTNS2 (Switch 2 / Longshot).
+"""Build the MuteCutsceneVA RomFS mod for OOTNS2 (Switch 2 / Longshot / Emulators / .nup).
 
-Mutes voice-acted cutscene dialogue across two audio layers:
-1. `Voice/Resource/Stream/*EventFlowMsg-_Dm_*.bwav` (Opus codec 2, 9 languages +
-   shared unprefixed streams): replaces every Opus packet with a libopus-verified
-   silent CELT packet while keeping packet count, `samples_full`, and header
-   intact (all outputs <= vanilla size; `Voice/Resource/*.bars.zs` are metadata-only
-   and left untouched).
+Mutes voice-acted cutscene dialogue across two audio layers, plus ResourceSizeTable patching:
+1. `Voice/` cutscene dialogue (`--voice-mode embed`, default):
+   - Embeds minimal `136`-byte (`14`-sample) silent DSP-ADPCM `BWAV`s inside
+     `Voice/Resource/*_EventFlowMsg-_Dm_*.bars.zs` (`AMTA v5` flags = `0x02`),
+     preventing the engine from opening `Voice/Resource//Stream/*.bwav`.
+   - Optional `--voice-mode stream`: replaces every Opus packet in
+     `Voice/Resource/Stream/*EventFlowMsg-_Dm_*.bwav` with a libopus-verified
+     silent CELT frame (`<=` vanilla size) and updates metadata-only `BWAV` CRC32s
+     inside `Voice/Resource/*.bars.zs`.
 2. `Sound/Resource/Stream/NV_*_Dm_*_SpNN.bwav` and their matching `is_prefetch`
    BWAV entries inside `Sound/Resource/NV_*.bars.zs` (DSP-ADPCM codec 1): zeroes
-   the sample payload and ADPCM history in-place (<= vanilla size).
+   the sample payload and ADPCM history in-place (`<=` vanilla size).
+3. `System/Resource/ResourceSizeTable.*.rsizetable.zs` (`RESTBL`): raises only
+   entries whose modded files exceed their vanilla RESTBL budget (all `891`
+   embedded `Voice/Resource/*.bars.zs` in default mode) so Switch 2 emulators
+   (e.g. Lichii) and `.nup` patchers load cleanly alongside Longshot. Pass
+   `--no-restbl` for a Longshot-only build without `System/Resource/`.
 
 All non-cutscene audio (Link `Vo_*` grunts, `Voice/` `LayoutMsg-_MessageInGame_00`
 prompts, non-`Dm_` `NV_*` NPC reactions/grunts, BGM, and SFX) is left untouched.
@@ -29,12 +37,16 @@ from typing import Any
 
 from oot_formats import (
     ZsContext,
+    compute_restbl_required_size,
     embed_silent_bwavs_in_bars,
     parse_bars,
     parse_bwav,
     parse_opus_bwav,
+    parse_restbl,
     patch_bars_bwav_crcs,
     patch_bars_bwavs,
+    patch_restbl,
+    restbl_key,
     silence_bwav,
     silence_opus_bwav,
 )
@@ -43,6 +55,7 @@ from opus_silence import OpusChecker, make_silent_packet
 CUTSCENE_VA_RE = re.compile(r"^NV_.+_Dm_.+_Sp\d+\.bwav$")
 VOICE_CUTSCENE_RE = re.compile(r"^(?:[A-Za-z]{4}_)?EventFlowMsg-_Dm_.+\.bwav$")
 VOICE_BARS_CUTSCENE_RE = re.compile(r"^(?:[A-Za-z]{4}_)?EventFlowMsg-_Dm_.+\.bars\.zs$")
+RESTBL_VERSION_RE = re.compile(r"ResourceSizeTable\.Product\.(\d+)\.")
 CUSTOM_CHAR_RE = re.compile(r"^NV_[A-Za-z]{4}_Custom_(.+?)(?:_\d+.*)?$")
 DEFAULT_OUT = Path("dist/MuteCutsceneVA/romfs")
 DEFAULT_REPORT_DIR = Path("reports")
@@ -118,6 +131,22 @@ def collect_voice_streams(
     return target_voice, preserved_voice
 
 
+def find_vanilla_restbl(romfs: Path) -> Path | None:
+    """Return the highest-version System/Resource/ResourceSizeTable.*.rsizetable.zs, or None."""
+    sys_res_dir = romfs / "System" / "Resource"
+    if not sys_res_dir.is_dir():
+        return None
+    candidates = [p for p in sys_res_dir.glob("ResourceSizeTable.*.rsizetable.zs") if p.is_file()]
+    if not candidates:
+        return None
+
+    def sort_key(p: Path) -> tuple[int, str]:
+        m = RESTBL_VERSION_RE.search(p.name)
+        return (int(m.group(1)) if m else -1, p.name)
+
+    return sorted(candidates, key=sort_key)[-1]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Build MuteCutsceneVA RomFS mod (Stage 1 prototype or Stage 2 full build)."
@@ -158,6 +187,11 @@ def main() -> None:
             "Voice/Resource/*.bars.zs to bypass Longshot's Voice/Resource//Stream/ mod-matching bug; "
             "'stream' silences Voice/Resource/Stream/*.bwav Opus streams directly."
         ),
+    )
+    parser.add_argument(
+        "--no-restbl",
+        action="store_true",
+        help="Skip emitting System/Resource/ResourceSizeTable.*.rsizetable.zs (for Longshot-only builds where Longshot merges RESTBL automatically).",
     )
     parser.add_argument(
         "--sync-to",
@@ -462,7 +496,111 @@ def main() -> None:
 
         log(f"Patched {len(patched_bars_audit)} NV_*.bars.zs archive(s) (100% BARS prefetch coverage).")
 
-    # 3. Write audit reports
+    # 3. Check & patch ResourceSizeTable (RESTBL) when modded files exceed vanilla RESTBL budget
+    modded_entries: list[tuple[str, int, int]] = []
+    for item in patched_voice_bars_audit:
+        modded_entries.append((item["rel_path"], item["vanilla_raw_bytes"], item["mod_raw_bytes"]))
+    for item in patched_bars_audit:
+        modded_entries.append((item["rel_path"], item["vanilla_raw_bytes"], item["mod_raw_bytes"]))
+    for item in muted_voice_audit:
+        modded_entries.append((item["rel_path"], item["vanilla_bytes"], item["mod_bytes"]))
+    for item in muted_sound_audit:
+        modded_entries.append((item["rel_path"], item["vanilla_bytes"], item["mod_bytes"]))
+
+    restbl_path = find_vanilla_restbl(romfs)
+    restbl_audit: dict[str, Any] = {
+        "emitted": False,
+        "rel_path": f"System/Resource/{restbl_path.name}" if restbl_path is not None else None,
+        "no_restbl_flag": bool(args.no_restbl),
+        "vanilla_found": restbl_path is not None,
+        "checked_in_restbl": 0,
+        "not_in_restbl": 0,
+        "exceed_vanilla_raw": 0,
+        "exceed_vanilla_restbl_raw": 0,
+        "raised_count": 0,
+        "vanilla_zs_bytes": None,
+        "mod_zs_bytes": None,
+        "raw_bytes": None,
+        "raised_entries": [],
+    }
+
+    if restbl_path is not None:
+        orig_restbl_zs = restbl_path.read_bytes()
+        orig_restbl_raw = zs_ctx.decompress(orig_restbl_zs)
+        parsed_rt = parse_restbl(orig_restbl_raw)
+        restbl_audit["vanilla_zs_bytes"] = len(orig_restbl_zs)
+        restbl_audit["raw_bytes"] = len(orig_restbl_raw)
+
+        restbl_updates: dict[str, int] = {}
+        for rel_path, v_raw, m_raw in modded_entries:
+            key = restbl_key(rel_path)
+            crc = zlib.crc32(key.encode("utf-8")) & 0xFFFFFFFF
+            v_rsz = parsed_rt["name_entries"].get(key)
+            if v_rsz is None:
+                v_rsz = parsed_rt["crc_entries"].get(crc)
+            if v_rsz is None:
+                restbl_audit["not_in_restbl"] += 1
+                continue
+
+            restbl_audit["checked_in_restbl"] += 1
+            if m_raw > v_raw:
+                restbl_audit["exceed_vanilla_raw"] += 1
+            if m_raw > v_rsz:
+                restbl_audit["exceed_vanilla_restbl_raw"] += 1
+
+            req_size = compute_restbl_required_size(v_rsz, v_raw, m_raw)
+            if req_size > v_rsz:
+                restbl_updates[rel_path] = req_size
+
+        if restbl_updates and not args.no_restbl:
+            patched_rt_raw, raised_entries = patch_restbl(orig_restbl_raw, restbl_updates)
+            patched_rt_zs = zs_ctx.compress_like(orig_restbl_zs, patched_rt_raw)
+            out_sys_res_dir = out_romfs / "System" / "Resource"
+            out_sys_res_dir.mkdir(parents=True, exist_ok=True)
+            out_rt_path = out_sys_res_dir / restbl_path.name
+            out_rt_path.write_bytes(patched_rt_zs)
+
+            # Inline round-trip verification of the emitted RESTBL archive
+            rt_check_raw = zs_ctx.decompress(out_rt_path.read_bytes())
+            rt_check = parse_restbl(rt_check_raw)
+            if (
+                rt_check["crc_count"] != parsed_rt["crc_count"]
+                or rt_check["name_count"] != parsed_rt["name_count"]
+            ):
+                raise RuntimeError("Round-trip RESTBL entry count mismatch")
+            for entry in raised_entries:
+                tbl = rt_check["name_entries"] if entry["table"] == "name" else rt_check["crc_entries"]
+                lookup = entry["restbl_key"] if entry["table"] == "name" else int(entry["crc32"], 16)
+                if tbl.get(lookup) != entry["new_restbl_bytes"]:
+                    raise RuntimeError(f"Round-trip RESTBL verification failed for {entry['rel_path']}")
+
+            restbl_audit["emitted"] = True
+            restbl_audit["mod_zs_bytes"] = len(patched_rt_zs)
+            restbl_audit["raised_count"] = len(raised_entries)
+            restbl_audit["raised_entries"] = raised_entries
+            log(
+                f"Patched {restbl_audit['rel_path']}: raised {len(raised_entries)} entries "
+                f"(checked {restbl_audit['checked_in_restbl']}, raw exceed {restbl_audit['exceed_vanilla_restbl_raw']})."
+            )
+        elif restbl_updates and args.no_restbl:
+            log(
+                f"Skipped {restbl_audit['rel_path']} (--no-restbl): {len(restbl_updates)} entry/entries "
+                f"exceed vanilla RESTBL budget (Longshot auto-RESTBL required)."
+            )
+        else:
+            log(
+                f"RESTBL check: all {restbl_audit['checked_in_restbl']} tracked file(s) fit within vanilla "
+                f"{restbl_path.name}; omitting RESTBL."
+            )
+    else:
+        exceed_raw_only = sum(1 for _, v_raw, m_raw in modded_entries if m_raw > v_raw)
+        if exceed_raw_only > 0 and not args.no_restbl:
+            raise SystemExit(
+                f"Missing System/Resource/ResourceSizeTable.*.rsizetable.zs in {romfs}, "
+                f"needed to patch {exceed_raw_only} grown file(s) for emulators/.nup (or pass --no-restbl for Longshot-only)."
+            )
+
+    # 4. Write audit reports
     args.report_dir.mkdir(parents=True, exist_ok=True)
     audit_data = {
         "mode": mode_label,
@@ -476,7 +614,10 @@ def main() -> None:
             "muted_sound_streams": len(muted_sound_audit),
             "patched_bars_archives": len(patched_bars_audit),
             "preserved_nv_streams": len(preserved_nv),
+            "restbl_emitted": restbl_audit["emitted"],
+            "restbl_raised_entries": restbl_audit["raised_count"],
         },
+        "restbl": restbl_audit,
         "muted_voice_streams": muted_voice_audit,
         "skipped_damaged_voice_streams": skipped_damaged_voice,
         "patched_voice_bars_archives": patched_voice_bars_audit,
@@ -495,9 +636,29 @@ def main() -> None:
         f"Patched Voice/ .bars.zs archives: {len(patched_voice_bars_audit)}",
         f"Muted Sound/ NV_ .bwav streams: {len(muted_sound_audit)} (preserved: {len(preserved_nv)})",
         f"Patched Sound/ NV_*.bars.zs archives: {len(patched_bars_audit)}",
+        (
+            f"ResourceSizeTable (RESTBL): emitted={restbl_audit['emitted']} "
+            f"({restbl_audit['rel_path'] or 'not found'}), "
+            f"checked={restbl_audit['checked_in_restbl']}, "
+            f"not_in_restbl={restbl_audit['not_in_restbl']}, "
+            f"exceed_vanilla_raw={restbl_audit['exceed_vanilla_raw']}, "
+            f"exceed_vanilla_restbl={restbl_audit['exceed_vanilla_restbl_raw']}, "
+            f"raised={restbl_audit['raised_count']}, "
+            f"no_restbl={restbl_audit['no_restbl_flag']}"
+        ),
         "",
-        "Patched Voice/ .bars.zs archives (first 30):",
     ]
+    if restbl_audit["raised_entries"]:
+        txt_lines.append("Raised RESTBL entries (first 30):")
+        for r in restbl_audit["raised_entries"][:30]:
+            txt_lines.append(
+                f"  {r['rel_path']} [{r['table']}]: {r['vanilla_restbl_bytes']} -> "
+                f"{r['new_restbl_bytes']} (+{r['delta_bytes']})"
+            )
+        if len(restbl_audit["raised_entries"]) > 30:
+            txt_lines.append(f"  ... ({len(restbl_audit['raised_entries']) - 30} more in build_audit.json)")
+        txt_lines.append("")
+    txt_lines.append("Patched Voice/ .bars.zs archives (first 30):")
     for b in patched_voice_bars_audit[:30]:
         txt_lines.append(
             f"  {b['rel_path']}: updated {b['updated_entries']}/{b['total_entries']}, "
@@ -531,7 +692,7 @@ def main() -> None:
     txt_path.write_text("\n".join(txt_lines) + "\n")
     log(f"Wrote audit reports: {txt_path}, {json_path}")
 
-    # 4. Optional sync to Longshot mods folder
+    # 5. Optional sync to Longshot mods folder
     if args.sync_to is not None:
         if args.sync_to.exists():
             shutil.rmtree(args.sync_to)

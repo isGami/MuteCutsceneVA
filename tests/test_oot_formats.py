@@ -11,17 +11,21 @@ SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from build_mod import ensure_safe_target  # noqa: E402
+from build_mod import ensure_safe_target, find_vanilla_restbl  # noqa: E402
 from oot_formats import (  # noqa: E402
     OPUS_DATA_CHUNK,
     OPUS_INFO_CHUNK,
+    compute_restbl_required_size,
     embed_silent_bwavs_in_bars,
     make_silent_adpcm_bwav,
     parse_bars,
     parse_bwav,
     parse_opus_bwav,
+    parse_restbl,
     patch_bars_bwav_crcs,
     patch_bars_bwavs,
+    patch_restbl,
+    restbl_key,
     silence_bwav,
     silence_opus_bwav,
 )
@@ -85,6 +89,23 @@ def _make_synthetic_bars(entries: list[tuple[int, int, bytes]]) -> bytes:
 
     struct.pack_into("<I", buf, 0x04, len(buf))
     return bytes(buf)
+
+
+def _make_synthetic_restbl(
+    crc_entries: dict[int, int],
+    name_entries: dict[str, int],
+    str_block_size: int = 160,
+) -> bytes:
+    out = bytearray(
+        struct.pack("<6sIIII", b"RESTBL", 1, str_block_size, len(crc_entries), len(name_entries))
+    )
+    for h in sorted(crc_entries):
+        out.extend(struct.pack("<II", h, crc_entries[h]))
+    for name in sorted(name_entries):
+        raw_name = name.encode("utf-8")
+        out.extend(raw_name + b"\x00" * (str_block_size - len(raw_name)))
+        out.extend(struct.pack("<I", name_entries[name]))
+    return bytes(out)
 
 
 class TestOotFormats(unittest.TestCase):
@@ -162,6 +183,73 @@ class TestOotFormats(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 ensure_safe_target(Path(tmp), romfs, "--out")
             ensure_safe_target(Path(tmp) / "dist", romfs, "--out")
+
+    def test_restbl_key(self) -> None:
+        self.assertEqual(
+            restbl_key("Voice/Resource/USen_EventFlowMsg-_Dm_Kokiri_0050.bars.zs"),
+            "Voice/Resource/USen_EventFlowMsg-_Dm_Kokiri_0050.bars",
+        )
+        self.assertEqual(
+            restbl_key("/Sound\\Resource\\Stream\\NV_Mido_00.bwav"),
+            "Sound/Resource/Stream/NV_Mido_00.bwav",
+        )
+
+    def test_compute_restbl_required_size(self) -> None:
+        # Unchanged / shrunk mod files keep vanilla RESTBL size
+        self.assertEqual(compute_restbl_required_size(3240, 2652, 2652), 3240)
+        self.assertEqual(compute_restbl_required_size(3240, 2652, 2000), 3240)
+        # Grown mod files preserve vanilla overhead + 128-byte pad, aligned up to 32
+        req = compute_restbl_required_size(936, 348, 392)
+        self.assertEqual(req, 1120)
+        self.assertEqual(req % 32, 0)
+        self.assertGreaterEqual(req, 936 + (392 - 348) + 128)
+
+    def test_parse_and_patch_restbl(self) -> None:
+        key_a = "Voice/Resource/A.bars"
+        key_b = "Voice/Resource/B.bars"
+        key_named = "Actor/Test.bgyml"
+        crc_a = zlib.crc32(key_a.encode("utf-8")) & 0xFFFFFFFF
+        crc_b = zlib.crc32(key_b.encode("utf-8")) & 0xFFFFFFFF
+        raw = _make_synthetic_restbl(
+            crc_entries={crc_a: 1000, crc_b: 2000},
+            name_entries={key_named: 5000},
+        )
+        parsed = parse_restbl(raw)
+        self.assertEqual(parsed["version"], 1)
+        self.assertEqual(parsed["crc_count"], 2)
+        self.assertEqual(parsed["name_count"], 1)
+
+        patched, audit = patch_restbl(
+            raw,
+            {
+                key_a + ".zs": 1500,  # raise
+                key_b + ".zs": 1800,  # smaller -> must NOT shrink
+                key_named: 6400,      # raise in name table
+            },
+        )
+        self.assertEqual(len(patched), len(raw))
+        self.assertEqual(len(audit), 2)
+        reparsed = parse_restbl(patched)
+        self.assertEqual(reparsed["crc_entries"][crc_a], 1500)
+        self.assertEqual(reparsed["crc_entries"][crc_b], 2000)
+        self.assertEqual(reparsed["name_entries"][key_named], 6400)
+
+        with self.assertRaises(ValueError):
+            parse_restbl(b"BAD!" + raw[4:])
+        with self.assertRaises(ValueError):
+            parse_restbl(raw[:-4])
+
+    def test_find_vanilla_restbl(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            romfs = Path(tmp) / "romfs"
+            self.assertIsNone(find_vanilla_restbl(romfs))
+            sys_res = romfs / "System" / "Resource"
+            sys_res.mkdir(parents=True)
+            (sys_res / "ResourceSizeTable.Product.100.Nin_Ounce_NVN2.rsizetable.zs").write_bytes(b"100")
+            (sys_res / "ResourceSizeTable.Product.111.Nin_Ounce_NVN2.rsizetable.zs").write_bytes(b"111")
+            found = find_vanilla_restbl(romfs)
+            self.assertIsNotNone(found)
+            self.assertEqual(found.name, "ResourceSizeTable.Product.111.Nin_Ounce_NVN2.rsizetable.zs")
 
 
 if __name__ == "__main__":

@@ -67,4 +67,25 @@ Cutscene spoken dialogue lives in two places, cleanly separated from classic gam
 
 OOTNS2 opens streamed `Voice/` assets with a doubled path separator (`content://Voice/Resource//Stream/<name>.bwav`). As documented in [Longshot PR #1346](https://git.magicbean.dev/MagicBeanDev/Longshot/pulls/1346), Longshot's `mods.c` `lower_slash` helper preserves `//` in its lookup key (`voice/resource//stream/...`), so RomFS mod files placed under `mods/<ModName>/romfs/Voice/Resource/Stream/*.bwav` never match in Longshot.
 
-Because `Voice/Resource/*.bars.zs` uses a single slash and loads reliably from mods, converting cutscene entries in `Voice/Resource/*_EventFlowMsg-_Dm_*.bars.zs` from `flags = 0x11` (external Opus stream) to `flags = 0x02` (embedded `14`-sample silent DSP-ADPCM `BWAV`) prevents the engine from opening `Voice/Resource//Stream/` at all. Longshot automatically raises `ResourceSizeTable` (`RESTBL`) entries at boot when a modded `.bars.zs` grows slightly larger than vanilla.
+Because `Voice/Resource/*.bars.zs` uses a single slash and loads reliably from mods, converting cutscene entries in `Voice/Resource/*_EventFlowMsg-_Dm_*.bars.zs` from `flags = 0x11` (external Opus stream) to `flags = 0x02` (embedded `14`-sample silent DSP-ADPCM `BWAV`) prevents the engine from opening `Voice/Resource//Stream/` at all. Longshot automatically merges and raises `ResourceSizeTable` (`RESTBL`) entries at boot; for Switch 2 emulators and `.nup` patchers, `build_mod.py` also patches `RESTBL` directly.
+
+## 5. `ResourceSizeTable` (`RESTBL v1`) Format, Margins & Emulator Compatibility
+
+Inspected from vanilla `System/Resource/ResourceSizeTable.Product.111.Nin_Ounce_NVN2.rsizetable.zs` (Ver. 1.1.1):
+
+- **Zstd Frame Parameters:** Plain Zstd (`dict_id = 0`, `content_size = 1,761,406`, `window_size = 1,761,406`, `has_checksum = False`; `1,395,286` bytes compressed). `ZsContext.compress_like()` reproduces all frame parameters identically.
+- **Binary Layout (`RESTBL v1`):**
+  - `22`-byte header (`<6sIIII`): `magic = b"RESTBL"`, `version = 1`, `str_block_size = 160`, `crc_count = 219,968`, `name_count = 10` (`22 + 219,968*8 + 10*164 = 1,761,406` bytes exact).
+  - **CRC Table:** `219,968` sorted, unique `(u32 crc32, u32 size)` pairs keyed by normalized RomFS relative path with `.zs` stripped (e.g., `Voice/Resource/USen_EventFlowMsg-_Dm_Kokiri_0050.bars`).
+  - **Name Table:** `10` sorted `(160-byte NUL-padded UTF-8 path, u32 size)` entries (`5` CRC32 collision pairs).
+- **Vanilla Margins & Why All `891` Voice `.bars.zs` Exceed Budget:**
+  - OOTNS2's `RESTBL` stores `decompressed_file_size + resource_class_overhead` rather than raw file size alone. For `.bars` archives, this overhead is `+584..+608` bytes (`+588` on `882/891` cutscene `Voice/` archives and `+608` on `9/891`; pure `flags = 0x02` archives such as `Npc.bars.zs` also carry `+584..+608` bytes).
+  - Because that `~588`-byte margin is runtime `BARS` resource-object heap overhead rather than spare file capacity, **all `891/891`** embedded `Voice/Resource/*.bars.zs` archives exceed their vanilla RESTBL budget (`mod_raw > vanilla_raw` by `+44` to `+2,476` bytes; `369/891` even exceed `vanilla_restbl` in raw file size alone by up to `+1,888` bytes). Longshot's own `modcache/rsizetable.zs` likewise raised all `891` entries.
+  - `Sound/Resource/NV_*.bars.zs` (`67` patched): `0/67` grow (`mod_raw == vanilla_raw`).
+  - `Sound/Resource/Stream/NV_*.bwav` (`672` silenced): streamed `.bwav` files are not tracked in `RESTBL` (and remain `==` vanilla size).
+- **Why Zero-Conflict (No `RESTBL`) Is Not Safely Achievable in `--voice-mode embed`:**
+  - Even if multi-entry archives shared a single `136`-byte silent `BWAV`, `126/891` cutscene archives contain only `1` entry and still grow by `+44` bytes (`136`-byte embedded ADPCM `BWAV`—matching Nintendo's own `136`-byte `DummyBlank` in `Npc.bars.zs`—versus the `92`-byte vanilla stream stub).
+  - All `35,395` vanilla `BARS` `asset_offset`s and all `6,719` vanilla embedded `BWAV` `data_offset`s are `0x40`-aligned, and trimming `AMTA v5` is unsafe (`+0x48` is non-uniform across archives, and `9` single-entry archives have `0`-byte alignment gaps).
+- **Patching Formula & Verification:**
+  - `compute_restbl_required_size()` raises only entries with `mod_raw > vanilla_raw` to `align32(vanilla_restbl + (mod_raw - vanilla_raw) + 128)`, preserving each file's vanilla heap overhead plus a `128`-byte cushion aligned up to `32` bytes, and never shrinks any entry (`0` shrunk, `891` CRC entries raised, `10` name-table entries untouched).
+  - Verified in Longshot (`logs/longshot_log.txt`): `mods: resource size table: 1 tables of mods merged (891 entries), 0 entries raised for mod files (0 added files estimated)`.

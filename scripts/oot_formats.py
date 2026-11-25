@@ -538,3 +538,141 @@ def embed_silent_bwavs_in_bars(
 
     struct.pack_into(end + "I", out, 0x04, len(out))
     return bytes(out), audit
+
+
+# ---------------------------------------------------------------------------
+# ResourceSizeTable (RESTBL v1)
+#   0x00  "RESTBL" (6 bytes)
+#   0x06  u32 version (1)
+#   0x0A  u32 str_block_size (160)
+#   0x0E  u32 crc_count
+#   0x12  u32 name_count
+#   0x16  crc_table[crc_count]:  (u32 crc32, u32 size) sorted by crc32
+#   ...   name_table[name_count]: (char[str_block_size] NUL-padded UTF-8, u32 size)
+# ---------------------------------------------------------------------------
+RESTBL_MAGIC = b"RESTBL"
+RESTBL_HEADER_SIZE = 22
+
+
+def restbl_key(rel_path: str) -> str:
+    """Normalize a RomFS relative path to its RESTBL lookup key (strip leading / and trailing .zs)."""
+    key = rel_path.replace("\\", "/").lstrip("/")
+    if key.endswith(".zs"):
+        key = key[:-3]
+    return key
+
+
+def _read_restbl_header(data: bytes) -> tuple[int, int, int, int]:
+    if len(data) < RESTBL_HEADER_SIZE or data[:6] != RESTBL_MAGIC:
+        raise ValueError(f"Not a RESTBL table (len={len(data)}, magic={data[:6]!r})")
+    _magic, version, str_block_size, crc_count, name_count = struct.unpack_from("<6sIIII", data, 0)
+    if version != 1:
+        raise ValueError(f"Unsupported RESTBL version: {version}")
+    expected_len = RESTBL_HEADER_SIZE + crc_count * 8 + name_count * (str_block_size + 4)
+    if len(data) != expected_len:
+        raise ValueError(f"RESTBL size mismatch: got {len(data)}, expected {expected_len}")
+    return version, str_block_size, crc_count, name_count
+
+
+def parse_restbl(data: bytes) -> dict[str, Any]:
+    """Parse a decompressed RESTBL v1 resource size table."""
+    version, str_block_size, crc_count, name_count = _read_restbl_header(data)
+
+    crc_entries: dict[int, int] = {}
+    crc_off = RESTBL_HEADER_SIZE
+    for i in range(crc_count):
+        h, sz = struct.unpack_from("<II", data, crc_off + i * 8)
+        crc_entries[h] = sz
+
+    name_entries: dict[str, int] = {}
+    name_off = crc_off + crc_count * 8
+    stride = str_block_size + 4
+    for i in range(name_count):
+        base = name_off + i * stride
+        raw_name = data[base : base + str_block_size].split(b"\x00", 1)[0]
+        name = raw_name.decode("utf-8", errors="replace")
+        sz, = struct.unpack_from("<I", data, base + str_block_size)
+        name_entries[name] = sz
+
+    return {
+        "version": version,
+        "str_block_size": str_block_size,
+        "crc_count": crc_count,
+        "name_count": name_count,
+        "crc_entries": crc_entries,
+        "name_entries": name_entries,
+    }
+
+
+def compute_restbl_required_size(
+    vanilla_restbl: int,
+    vanilla_raw: int,
+    mod_raw: int,
+    extra_pad: int = 128,
+    align: int = 32,
+) -> int:
+    """Compute a safe RESTBL entry size preserving vanilla heap overhead plus a padded alignment."""
+    if mod_raw <= vanilla_raw:
+        return vanilla_restbl
+    needed = vanilla_restbl + (mod_raw - vanilla_raw) + extra_pad
+    aligned = (needed + align - 1) & ~(align - 1)
+    return max(vanilla_restbl, aligned)
+
+
+def patch_restbl(data: bytes, updates: dict[str, int]) -> tuple[bytes, list[dict[str, Any]]]:
+    """Raise RESTBL entries where required_size > current size without shrinking any entry."""
+    _version, str_block_size, crc_count, name_count = _read_restbl_header(data)
+
+    crc_off = RESTBL_HEADER_SIZE
+    crc_offsets: dict[int, int] = {}
+    for i in range(crc_count):
+        entry_off = crc_off + i * 8
+        h, = struct.unpack_from("<I", data, entry_off)
+        crc_offsets[h] = entry_off + 4
+
+    name_off = crc_off + crc_count * 8
+    stride = str_block_size + 4
+    name_offsets: dict[str, int] = {}
+    for i in range(name_count):
+        base = name_off + i * stride
+        raw_name = data[base : base + str_block_size].split(b"\x00", 1)[0]
+        name = raw_name.decode("utf-8", errors="replace")
+        name_offsets[name] = base + str_block_size
+
+    buf = bytearray(data)
+    audit: list[dict[str, Any]] = []
+    for rel_path, required_size in sorted(updates.items()):
+        key = restbl_key(rel_path)
+        crc = zlib.crc32(key.encode("utf-8")) & 0xFFFFFFFF
+
+        if key in name_offsets:
+            sz_off = name_offsets[key]
+            old_size, = struct.unpack_from("<I", buf, sz_off)
+            if required_size > old_size:
+                struct.pack_into("<I", buf, sz_off, required_size)
+                audit.append({
+                    "rel_path": rel_path,
+                    "restbl_key": key,
+                    "crc32": f"{crc:08x}",
+                    "table": "name",
+                    "vanilla_restbl_bytes": old_size,
+                    "new_restbl_bytes": required_size,
+                    "delta_bytes": required_size - old_size,
+                })
+
+        if crc in crc_offsets:
+            sz_off = crc_offsets[crc]
+            old_size, = struct.unpack_from("<I", buf, sz_off)
+            if required_size > old_size:
+                struct.pack_into("<I", buf, sz_off, required_size)
+                audit.append({
+                    "rel_path": rel_path,
+                    "restbl_key": key,
+                    "crc32": f"{crc:08x}",
+                    "table": "crc",
+                    "vanilla_restbl_bytes": old_size,
+                    "new_restbl_bytes": required_size,
+                    "delta_bytes": required_size - old_size,
+                })
+
+    return bytes(buf), audit
