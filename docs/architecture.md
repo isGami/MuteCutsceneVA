@@ -21,8 +21,12 @@ OOTNS2 cutscene dialogue spans both `Voice/` and `Sound/`. `build_mod.py` handle
 
 ### Layer 2: `Sound/Resource/Stream/NV_*_Dm_*_SpNN.bwav` + `Sound/Resource/NV_*.bars.zs`
 - Matches only `Sound/Resource/Stream/` files fitting `^NV_.+_Dm_.+_Sp\d+\.bwav$` (`672` files across all languages and non-prefixed characters such as `NV_Mido`, `NV_KingZora`, `NV_Talon`).
-- Zeroes each `.bwav` stream's DSP-ADPCM payload and initial/loop ADPCM context (`0x3C..0x48`) via `silence_bwav()` and recomputes its `BWAV` `crc32`, keeping exact duration and exact byte length (`<=` vanilla).
-- Computes `zlib.crc32(stream_stem)` for each silenced stream and calls `patch_bars_bwavs()` on `Sound/Resource/NV_*.bars.zs` to silence only the matching `is_prefetch` BWAV sub-entries inside those mixed archives (`67` archives patched in full-game mode), leaving all non-`Dm_` NPC grunts/reactions intact.
+- **Allowlist filtering (`--keep-sp`, default `data/keep_sp_clips.txt`):**
+  - Before silencing, `collect_streams()` checks each matching `Sp` file against patterns loaded by `load_keep_sp()` (`fnmatch.fnmatchcase` against either the language-neutral clip ID—e.g. `Saria_Dm_Kokiri_0060_0000_Sp00`—or the full filename stem for single-language exceptions).
+  - Precedence: `--custom-chars` / `--all-custom` take priority over the allowlist; `--no-keep-sp` disables the allowlist completely.
+  - Kept clips need no binary patching: they are simply omitted from `Sound/Resource/Stream/` staging and skipped by `patch_bars_bwavs()`, and `NV_*.bars.zs` archives with zero remaining muted entries are not staged at all. `RESTBL` is unaffected.
+- Zeroes each remaining target `.bwav` stream's DSP-ADPCM payload and initial/loop ADPCM context (`0x3C..0x48`) via `silence_bwav()` and recomputes its `BWAV` `crc32`, keeping exact duration and exact byte length (`<=` vanilla).
+- Computes `zlib.crc32(stream_stem)` for each silenced stream and calls `patch_bars_bwavs()` on `Sound/Resource/NV_*.bars.zs` to silence only the matching `is_prefetch` BWAV sub-entries inside those mixed archives (`0` archives patched with the default `data/keep_sp_clips.txt`, where all `102` `Sp` clip IDs are enabled; `67` archives patched with `--no-keep-sp`), leaving all non-`Dm_` NPC grunts/reactions and any allowlisted `Sp` clips intact.
 
 ### Layer 3: `System/Resource/ResourceSizeTable.*.rsizetable.zs` (`RESTBL`)
 - Locates the highest-version vanilla `ResourceSizeTable.*.rsizetable.zs` in `--romfs` via `find_vanilla_restbl()`.
@@ -43,9 +47,10 @@ OOTNS2 cutscene dialogue spans both `Voice/` and `Sound/`. `build_mod.py` handle
 
 ## 3. Repository Layout
 
-- `scripts/oot_formats.py`: Pure-Python parsers and writers for `ZsDic`, `SARC`, `BARS`, `AMTA`, `BWAV` (DSP-ADPCM & Nintendo Opus), and `RESTBL v1`.
+- `data/keep_sp_clips.txt`: Default allowlist of `Sound/` `Sp` cutscene clip IDs/globs to keep unmuted (all `102` cutscene `Sp` clip IDs enabled by default).
+- `scripts/oot_formats.py`: Pure-Python parsers and writers for `ZsDic`, `SARC`, `BARS`, `AMTA`, `BWAV` (DSP-ADPCM & Nintendo Opus), `MSBT`, DSP-ADPCM WAV export, and `RESTBL v1`.
 - `scripts/opus_silence.py`: `ctypes` wrapper around system `libopus` for generating and verifying digitally silent Opus frames (`--voice-mode stream`).
-- `scripts/build_mod.py`: Main reproducible mod builder (`Stage 1` prototype filter via `--cutscene`, `Stage 2` full-game build, and audit emitter).
-- `scripts/01_inventory.py` & `scripts/02_inspect_bars.py`: Read-only RomFS inventory and `.bars.zs` inspection utilities.
+- `scripts/build_mod.py`: Main reproducible mod builder (`Stage 1` prototype filter via `--cutscene`, `Stage 2` full-game build, allowlist support, and audit emitter).
+- `scripts/01_inventory.py`, `scripts/02_inspect_bars.py`, & `scripts/03_review_sp_clips.py`: Read-only RomFS inventory, `.bars.zs` inspection, and `Sp` clip WAV/MSBT review tools.
 - `tests/`: Self-contained unit tests for binary format helpers and safety guards.
 - `docs/`: Architecture, reverse-engineering findings, troubleshooting, and Longshot modding reference docs.

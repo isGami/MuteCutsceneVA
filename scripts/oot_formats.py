@@ -1,6 +1,7 @@
 from __future__ import annotations
 import io
 import struct
+import wave
 import zlib
 from pathlib import Path
 from typing import Any
@@ -676,3 +677,197 @@ def patch_restbl(data: bytes, updates: dict[str, int]) -> tuple[bytes, list[dict
                 })
 
     return bytes(buf), audit
+
+
+# ---------------------------------------------------------------------------
+# MSBT message files (Mals/*.sarc.zs -> EventFlowMsg/*.msbt)
+# ---------------------------------------------------------------------------
+def parse_msbt(data: bytes) -> dict[str, bytes]:
+    """Parse a UTF-8 MSBT file and return {label: raw_txt2_bytes}."""
+    if data[:8] != b"MsgStdBn":
+        raise ValueError(f"Not an MSBT file (magic={data[:8]!r})")
+    end = detect_bom(data, 0x08)
+    encoding = data[0x0C]
+    if encoding != 0:
+        raise ValueError(f"Unsupported MSBT encoding {encoding} (expected 0 = UTF-8)")
+    section_count, = struct.unpack_from(end + "H", data, 0x0E)
+
+    labels: dict[int, str] = {}
+    texts: list[bytes] = []
+    off = 0x20
+    for _ in range(section_count):
+        if off + 0x10 > len(data):
+            raise ValueError("Truncated MSBT section header")
+        magic = data[off : off + 4]
+        size, = struct.unpack_from(end + "I", data, off + 4)
+        body = off + 0x10
+        if body + size > len(data):
+            raise ValueError(f"Truncated MSBT section {magic!r}")
+
+        if magic == b"LBL1":
+            bucket_count, = struct.unpack_from(end + "I", data, body)
+            for i in range(bucket_count):
+                cnt, bucket_off = struct.unpack_from(end + "II", data, body + 4 + i * 8)
+                p = body + bucket_off
+                for _ in range(cnt):
+                    name_len = data[p]
+                    name = data[p + 1 : p + 1 + name_len].decode("utf-8", errors="replace")
+                    idx, = struct.unpack_from(end + "I", data, p + 1 + name_len)
+                    labels[idx] = name
+                    p += 1 + name_len + 4
+        elif magic == b"TXT2":
+            txt_count, = struct.unpack_from(end + "I", data, body)
+            offs = [struct.unpack_from(end + "I", data, body + 4 + i * 4)[0] for i in range(txt_count)]
+            offs.append(size)
+            texts = [data[body + offs[i] : body + offs[i + 1]] for i in range(txt_count)]
+
+        off = body + ((size + 15) & ~15)
+
+    return {labels[i]: texts[i] for i in sorted(labels) if i < len(texts)}
+
+
+def _extract_msbt_tag_name(params: bytes) -> str | None:
+    """Return an ASCII identifier carried in an MSBT 0x0E tag's params, if present."""
+    if len(params) < 4:
+        return None
+    str_len, = struct.unpack_from("<H", params, 0)
+    if str_len == 0 or 2 + str_len > len(params):
+        return None
+    raw_id = params[2 : 2 + str_len]
+    trailing = params[2 + str_len :]
+    if trailing not in (b"", b"\x00"):
+        return None
+    if not all(0x21 <= b < 0x7F for b in raw_id):
+        return None
+    return raw_id.decode("ascii")
+
+
+def _parse_msbt_txt_parts(raw: bytes) -> tuple[str, list[str]]:
+    """Decode raw UTF-8 TXT2 bytes into plain text with [tag] markers and a tag-name list."""
+    parts: list[str] = []
+    tags: list[str] = []
+    text_buf = bytearray()
+    i = 0
+    n = len(raw)
+
+    def flush_text() -> None:
+        if text_buf:
+            parts.append(text_buf.decode("utf-8", errors="replace"))
+            text_buf.clear()
+
+    while i < n:
+        b = raw[i]
+        if b == 0x0E and i + 7 <= n:
+            flush_text()
+            _group, _tag_type, param_size = struct.unpack_from("<HHH", raw, i + 1)
+            end_tag = min(n, i + 7 + param_size)
+            tag_name = _extract_msbt_tag_name(raw[i + 7 : end_tag])
+            if tag_name is not None:
+                tags.append(tag_name)
+                parts.append(f"[{tag_name}]")
+            i = end_tag
+        elif b == 0x0F and i + 5 <= n:
+            flush_text()
+            i += 5
+        elif b == 0x00:
+            i += 1
+        else:
+            text_buf.append(b)
+            i += 1
+
+    flush_text()
+    return "".join(parts), tags
+
+
+def msbt_plain_text(raw: bytes) -> str:
+    """Decode raw MSBT TXT2 bytes to plain text, formatting named 0x0E tags as [tag]."""
+    text, _ = _parse_msbt_txt_parts(raw)
+    return text
+
+
+def msbt_tag_names(raw: bytes) -> list[str]:
+    """Return the list of named 0x0E tag identifiers found in raw MSBT TXT2 bytes."""
+    _, tags = _parse_msbt_txt_parts(raw)
+    return tags
+
+
+# ---------------------------------------------------------------------------
+# DSP-ADPCM BWAV decoding & WAV export (read-only review utility)
+# ---------------------------------------------------------------------------
+def decode_dsp_adpcm_bwav(data: bytes) -> tuple[int, list[list[int]]]:
+    """Decode a DSP-ADPCM (codec 1) BWAV into (sample_rate, per_channel_int16_samples)."""
+    if data[:4] != b"BWAV":
+        raise ValueError(f"Not BWAV: {data[:4]!r}")
+    end = detect_bom(data, 0x04)
+    _version, _crc32_hash, _is_prefetch, num_channels = struct.unpack_from(end + "HIHH", data, 0x06)
+    if num_channels == 0:
+        raise ValueError("BWAV has 0 channels")
+
+    sample_rate = 0
+    decoded_channels: list[list[int]] = []
+    for ch_idx in range(num_channels):
+        off = 0x10 + ch_idx * 0x4C
+        if off + 0x4C > len(data):
+            raise ValueError(f"Truncated BWAV ChannelInfo at channel {ch_idx}")
+        codec, _pan, sr, _samples_full, samples_here = struct.unpack_from(end + "HHIII", data, off)
+        if codec != 1:
+            raise ValueError(f"Unsupported BWAV codec {codec} (expected DSP-ADPCM codec 1)")
+        if ch_idx == 0:
+            sample_rate = sr
+        coefs = struct.unpack_from(end + "16h", data, off + 0x10)
+        _start_full, start_here = struct.unpack_from(end + "II", data, off + 0x30)
+        _pred_scale, yn1, yn2 = struct.unpack_from(end + "Hhh", data, off + 0x3C)
+
+        out: list[int] = []
+        pos = start_here
+        while len(out) < samples_here:
+            if pos + 8 > len(data):
+                raise ValueError(f"Truncated DSP-ADPCM frame at {pos:#x}")
+            ps = data[pos]
+            pos += 1
+            scale = 1 << (ps & 0x0F)
+            coef_idx = ps >> 4
+            if coef_idx >= 8:
+                raise ValueError(f"Invalid DSP-ADPCM coef index {coef_idx} at {pos - 1:#x}")
+            c1 = coefs[coef_idx * 2]
+            c2 = coefs[coef_idx * 2 + 1]
+
+            for byte_val in data[pos : pos + 7]:
+                for nib in ((byte_val >> 4) & 0x0F, byte_val & 0x0F):
+                    if len(out) >= samples_here:
+                        break
+                    signed_nib = nib - 16 if nib >= 8 else nib
+                    sample = (((signed_nib * scale) << 11) + 1024 + c1 * yn1 + c2 * yn2) >> 11
+                    if sample > 32767:
+                        sample = 32767
+                    elif sample < -32768:
+                        sample = -32768
+                    yn2 = yn1
+                    yn1 = sample
+                    out.append(sample)
+                if len(out) >= samples_here:
+                    break
+            pos += 7
+
+        decoded_channels.append(out)
+
+    return sample_rate, decoded_channels
+
+
+def write_wav(path: Path, sample_rate: int, channels: list[list[int]]) -> None:
+    """Write 16-bit signed PCM channels to a WAV file."""
+    if not channels:
+        raise ValueError("Cannot write WAV with 0 channels")
+    n_ch = len(channels)
+    n_samples = min(len(ch) for ch in channels)
+    if n_ch == 1:
+        interleaved = channels[0][:n_samples]
+    else:
+        interleaved = [channels[c][i] for i in range(n_samples) for c in range(n_ch)]
+    pcm_bytes = struct.pack(f"<{n_samples * n_ch}h", *interleaved)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as wf:
+        wf.setnchannels(n_ch)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm_bytes)

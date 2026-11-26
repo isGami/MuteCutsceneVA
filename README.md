@@ -5,12 +5,13 @@ A RomFS mod builder for *The Legend of Zelda: Ocarina of Time (Switch 2)* (`0400
 ## What Is Muted vs. Preserved
 - **Muted:**
   - All cutscene dialogue archives (`Voice/Resource/*_EventFlowMsg-_Dm_*.bars.zs`, `891` archives across all languages).
-  - All cutscene voice clips mixed into character archives (`Sound/Resource/Stream/NV_*_Dm_*_SpNN.bwav`, `672` clips, and their matching prefetch entries inside `67` `Sound/Resource/NV_*.bars.zs` archives).
+  - Any `Sound/Resource/Stream/NV_*_Dm_*_SpNN.bwav` cutscene clips not matched by `--keep-sp` (`0` muted with the default `data/keep_sp_clips.txt`, where all `102` clip IDs are enabled; `672` clips across `67` `Sound/Resource/NV_*.bars.zs` archives when built with `--no-keep-sp`).
 - **Patched for Emulator / `.nup` Compatibility:**
   - `System/Resource/ResourceSizeTable.Product.111.Nin_Ounce_NVN2.rsizetable.zs` (`891` grown `Voice/` `.bars.zs` entries raised; all other `219,077` CRC entries and `10` name-table entries preserved verbatim).
 - **Preserved:**
   - Link's gameplay grunts and efforts (`Vo_*`).
   - Non-cutscene NPC reactions and grunts (non-`Dm_` `NV_*` clips).
+  - All `672` cutscene `NV_*_Dm_*_SpNN` clips matched by `data/keep_sp_clips.txt` (all `102` clip IDs enabled by default; override with `--keep-sp` or `--no-keep-sp`).
   - In-game Navi / gameplay voice prompts (`Voice/Resource/*_LayoutMsg-_MessageInGame_00.bars.zs`).
   - All cutscene BGM, ambience, and sound effects (`Event_Dm_*`, `SE_*`).
 
@@ -26,9 +27,11 @@ Clone the repository and run `build_mod.py` pointing `--romfs` (or the `OOT_ROMF
 uv run scripts/build_mod.py --romfs /path/to/ootns2/romfs
 ```
 
-This stages `1,631` files (`891` `Voice/` `.bars.zs`, `67` `Sound/` `NV_*.bars.zs`, `672` `Sound/` `NV_*.bwav`, and `1` patched `System/Resource/ResourceSizeTable.Product.111.Nin_Ounce_NVN2.rsizetable.zs`) to `dist/MuteCutsceneVA/romfs/` and writes audit reports to `reports/build_audit.txt` and `reports/build_audit.json`.
+This stages `892` files by default (`891` `Voice/` `.bars.zs` and `1` patched `System/Resource/ResourceSizeTable.Product.111.Nin_Ounce_NVN2.rsizetable.zs`, because all `102` `Sp` clip IDs in `data/keep_sp_clips.txt` are enabled by default) — or `1,631` files with `--no-keep-sp` (adding `67` `Sound/` `NV_*.bars.zs` and `672` `Sound/` `NV_*.bwav`) — to `dist/MuteCutsceneVA/romfs/`, and writes audit reports to `reports/build_audit.txt` and `reports/build_audit.json`.
 
 ### Optional Flags
+- **Keep selected cutscene grunts/noises (`--keep-sp` / `--no-keep-sp`):**
+  `build_mod.py` reads `data/keep_sp_clips.txt` by default (pass `--keep-sp PATH` for a custom file, or `--no-keep-sp` to ignore the allowlist and mute all `Sp` clips).
 - **Sync directly into Longshot's `mods/` folder:**
   ```bash
   uv run scripts/build_mod.py \
@@ -47,6 +50,17 @@ This stages `1,631` files (`891` `Voice/` `.bars.zs`, `67` `Sound/` `NV_*.bars.z
     --romfs /path/to/ootns2/romfs \
     --cutscene Dm_Kokiri_0050,Dm_Kokiri_0060
   ```
+
+## Keeping Cutscene Grunts (`NV_*_Dm_*_SpNN`)
+Classic-style cutscenes use `Sound/Resource/Stream/NV_*_Dm_*_SpNN.bwav` clips (`102` language-neutral clip IDs: a mix of non-verbal grunts/laughs/pants/snores and short spoken lines). All `102` clip IDs are enabled by default in [`data/keep_sp_clips.txt`](data/keep_sp_clips.txt); you can review them by ear and comment out any you want muted (or pass `--no-keep-sp` to mute all `672` clips):
+
+1. Generate the WAV review page from your read-only RomFS:
+   ```bash
+   uv run scripts/03_review_sp_clips.py --romfs /path/to/ootns2/romfs
+   ```
+2. Open `reports/sp_review/index.html` in a browser to listen to each clip alongside its matching message text.
+3. Keep or comment out clip IDs (or use globs like `Talon_*`) in [`data/keep_sp_clips.txt`](data/keep_sp_clips.txt).
+4. Rebuild with `uv run scripts/build_mod.py --romfs /path/to/ootns2/romfs` (or pass `--keep-sp <file>` / `--no-keep-sp`). Kept clips are omitted from staging and left untouched inside `Sound/Resource/NV_*.bars.zs`.
 
 ## Installing in Longshot
 1. Copy `dist/MuteCutsceneVA/` into your Longshot game folder's `mods/` directory so the path is:

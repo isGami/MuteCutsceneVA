@@ -1,0 +1,165 @@
+# MuteCutsceneVA Sound/ Sp Clip Allowlist
+#
+# Lines in this file list Sound/Resource/Stream/NV_*_Dm_*_SpNN.bwav clips to KEEP
+# unmuted (for non-verbal grunts, laughs, pants, snores, etc.).
+#
+# Syntax:
+#   - One pattern per line; '#' starts a comment, blank lines are ignored.
+#   - Exact clip ID (applies to all languages):  Saria_Dm_Kokiri_0060_0000_Sp00
+#   - Wildcard / glob pattern:                  Talon_*
+#   - Full filename stem (single language):     NV_JPja_Custom_Saria_Dm_Kokiri_0060_0000_Sp00
+#
+# Uncomment entries below after listening in reports/sp_review/index.html, then rebuild:
+#   uv run scripts/build_mod.py --romfs /path/to/romfs
+
+# --- Darunia / Dm_Goron_0030 ---
+Darunia_Dm_Goron_0030_0010_Sp00                          #  1.02s | [Dm_Goron_0030_0010_Sp_00]*pant* *pant* *pant*
+Darunia_Dm_Goron_0030_0012_Sp00                          #  1.25s | [Dm_Goron_0030_0012_Sp_00]Ahhh, what a song!
+Darunia_Dm_Goron_0030_0013_Sp00                          #  1.38s | [Dm_Goron_0030_0013_Sp_00]I feel SO much better. Thank you.
+Darunia_Dm_Goron_0030_0017_Sp00                          #  0.65s | [Dm_Goron_0030_0017_Sp_00]Hold up. You wanna help, goro?
+Darunia_Dm_Goron_0030_0018_Sp00                          #  0.78s | [Dm_Goron_0030_0018_Sp_00]Here's the deal: You'll need to defeat the wild bea...
+
+# --- Impa / Dm_HrlField_0020 ---
+Impa_Dm_HrlField_0020_0016_Sp00                          #  0.32s | (no MSBT text)
+
+# --- KingZora / Dm_Zora_0010 ---
+KingZora_Dm_Zore_0010_0019_Sp00                          #  1.27s | [Dm_Zore_0010_0019_Sp_00]Whew...
+
+# --- Mido / Dm_Kokiri_0145 ---
+Mido_Dm_Kokiri_0145_0000_Sp00                            #  0.82s | [Dm_Kokiri_0145_0000_Sp_00]I'm going to go check on the Great Deku Tree. You...
+Mido_Dm_Kokiri_0145_0002_Sp00                            #  0.81s | [Dm_Kokiri_0145_0002_Sp_00]HEY! YOU!
+Mido_Dm_Kokiri_0145_0008_Sp00                            #  1.32s | [Dm_Kokiri_0145_0008_Sp_00]Great Deku Tree!
+Mido_Dm_Kokiri_0145_0009_Sp00                            #  1.94s | [Dm_Kokiri_0145_0009_Sp_00]Great Deku Tree!
+
+# --- Mido / Dm_LostWood_0015 ---
+Mido_Dm_LostWood_0015_0001_Sp00                          #  0.31s | [Dm_LostWood_0015_0001_Sp_00]That song... Saria only shares it with her frien...
+
+# --- Mido / Dm_LostWood_0025 ---
+Mido_Dm_LostWood_0025_0000_Sp00                          #  0.30s | [Dm_LostWood_0025_0000_Sp_00]Saria told me something...She told me that we do...
+Mido_Dm_LostWood_0025_0001_Sp00                          #  0.54s | [Dm_LostWood_0025_0001_Sp_00]That's why I gave her my word!I gave my word tha...
+Mido_Dm_LostWood_0025_0006_Sp00                          #  0.49s | [Dm_LostWood_0025_0006_Sp_00]...But I... I can't. I'm so frustrated by it all.
+Mido_Dm_LostWood_0025_0007_Sp00                          #  1.22s | [Dm_LostWood_0025_0007_Sp_00]...
+Mido_Dm_LostWood_0025_0011_Sp00                          #  0.42s | [Dm_LostWood_0025_0011_Sp_00]Swear that...you'll save Saria!
+Mido_Dm_LostWood_0025_0013_Sp00                          #  0.67s | [Dm_LostWood_0025_0013_Sp_00]I mean... Never mind.
+
+# --- Navi / Dm_InsideJabu_Jabu_0050 ---
+Navi_Dm_InsideJabu_Jabu_0050_0007_Sp00                   #  1.50s | (no MSBT text)
+
+# --- Navi / Dm_Kokiri_0075 ---
+Navi_Dm_Kokiri_0075_0012_Sp00                            #  0.87s | [Dm_Kokiri_0075_0012_Sp_00]Oh no! It's inside you, Great Deku Tree?!
+
+# --- Navi / Dm_Kokiri_0162 ---
+Navi_Dm_Kokiri_0162_0002_Sp00                            #  0.97s | [Dm_Kokiri_0162_0002_Sp_00]Link...
+
+# --- Rauru / Dm_SageRoom_0005 ---
+Rauru_Dm_SageRoom_0005_0001_Sp00                         #  1.09s | [Dm_SageRoom_0005_0001_Sp_00]You were...far too young.
+Rauru_Dm_SageRoom_0005_0008_Sp00                         #  1.04s | [Dm_SageRoom_0005_0008_Sp_00]However, you were still too young to fulfill the...
+Rauru_Dm_SageRoom_0005_0015_Sp00                         #  1.07s | [Dm_SageRoom_0005_0015_Sp_00]By him, you can only mean...Ganondorf.
+Rauru_Dm_SageRoom_0005_0017_Sp00                         #  1.46s | [Dm_SageRoom_0005_0017_Sp_00]The Gerudo king of thieves, Ganondorf—a man enti...
+Rauru_Dm_SageRoom_0005_0020_Sp00                         #  1.48s | [Dm_SageRoom_0005_0020_Sp_00]My own power cannot reach beyond this sacred pla...
+Rauru_Dm_SageRoom_0005_0022_Sp00                         #  1.12s | [Dm_SageRoom_0005_0022_Sp_00]Yet there is still hope.The Demon King has appea...
+Rauru_Dm_SageRoom_0005_0030_Sp00                         #  1.19s | [Dm_SageRoom_0005_0030_Sp_00]The Hero of Time. You.
+
+# --- Ruto_Adult / Dm_WaterTemple_0015 ---
+Ruto_Adult_Dm_WaterTemple_0015_0002_Sp00                 #  3.19s | [Dm_WaterTemple_0015_0002_Sp_00]Link...
+Ruto_Adult_Dm_WaterTemple_0015_0004_Sp00                 #  3.82s | [Dm_WaterTemple_0015_0004_Sp_00]The two of us exchanged a vow of love...
+Ruto_Adult_Dm_WaterTemple_0015_0005_Sp00                 #  3.21s | [Dm_WaterTemple_0015_0005_Sp_00]Only for you to abandon me for seven years. Y...
+Ruto_Adult_Dm_WaterTemple_0015_0007_Sp00                 #  3.75s | [Dm_WaterTemple_0015_0007_Sp_00]Hm? Is this true?
+Ruto_Adult_Dm_WaterTemple_0015_0010_Sp00                 #  3.09s | [Dm_WaterTemple_0015_0010_Sp_00]But my people, they...
+Ruto_Adult_Dm_WaterTemple_0015_0014_Sp00                 #  3.06s | [Dm_WaterTemple_0015_0014_Sp_00]Link. I need to save the Zora and restore my...
+Ruto_Adult_Dm_WaterTemple_0015_0016_Sp00                 #  3.23s | [Dm_WaterTemple_0015_0016_Sp_00]Defeat the monster that infests this temple!
+Ruto_Adult_Dm_WaterTemple_0015_0018_Sp00                 #  3.20s | [Dm_WaterTemple_0015_0018_Sp_00]You have ties to the royal family. Perhaps yo...
+Ruto_Adult_Dm_WaterTemple_0015_0019_Sp00                 #  3.17s | [Dm_WaterTemple_0015_0019_Sp_00]While you do that, there's another place I ne...
+Ruto_Adult_Dm_WaterTemple_0015_0023_Sp00                 #  2.98s | [Dm_WaterTemple_0015_0023_Sp_00]...Also, I can't explain it, but...
+Ruto_Adult_Dm_WaterTemple_0015_0024_Sp00                 #  3.17s | [Dm_WaterTemple_0015_0024_Sp_00]I must go to the depths of this temple, and q...
+Ruto_Adult_Dm_WaterTemple_0015_0027_Sp00                 #  3.00s | [Dm_WaterTemple_0015_0027_Sp_00]We need to save Zora Domain—together! Link, i...
+Ruto_Adult_Dm_WaterTemple_0015_0029_Sp00                 #  3.40s | (no MSBT text)
+
+# --- Ruto_Child / Dm_InsideJabu_Jabu_0020 ---
+Ruto_Child_Dm_InsideJabu_Jabu_0020_0000_Sp00             #  0.57s | [Dm_InsideJabu_Jabu_0020_0000_Sp_00]Ah!
+Ruto_Child_Dm_InsideJabu_Jabu_0020_0002_Sp00             #  2.22s | [Dm_InsideJabu_Jabu_0020_0002_Sp_00]Well, what are you waiting for?! Throw me...
+
+# --- Ruto_Child / Dm_InsideJabu_Jabu_0030 ---
+Ruto_Child_Dm_InsideJabu_Jabu_0030_0004_Sp00             #  1.28s | [Dm_InsideJabu_Jabu_0030_0004_Sp_00]Phew... At long last, we're reunited! I f...
+Ruto_Child_Dm_InsideJabu_Jabu_0030_0014_Sp00             #  1.27s | (no MSBT text)
+Ruto_Child_Dm_InsideJabu_Jabu_0030_0016_Sp00             #  3.98s | (no MSBT text)
+Ruto_Child_Dm_InsideJabu_Jabu_0030_0017_Sp00             #  2.19s | [Dm_InsideJabu_Jabu_0030_0017_Sp_00]What's happening?!
+Ruto_Child_Dm_InsideJabu_Jabu_0030_0020_Sp00             #  0.69s | (no MSBT text)
+Ruto_Child_Dm_InsideJabu_Jabu_0030_0021_Sp00             #  1.73s | (no MSBT text)
+
+# --- Ruto_Child / Dm_InsideJabu_Jabu_0050 ---
+Ruto_Child_Dm_InsideJabu_Jabu_0050_0001_Sp00             #  0.54s | [Dm_InsideJabu_Jabu_0050_0001_Sp_00]Took you long enough!
+Ruto_Child_Dm_InsideJabu_Jabu_0050_0004_Sp00             #  1.00s | [Dm_InsideJabu_Jabu_0050_0004_Sp_00]Ugh... You're useless.
+Ruto_Child_Dm_InsideJabu_Jabu_0050_0005_Sp00             #  1.95s | (no MSBT text)
+Ruto_Child_Dm_InsideJabu_Jabu_0050_0014_Sp00             #  2.51s | (no MSBT text)
+
+# --- Saria / Dm_Kokiri_0060 ---
+Saria_Dm_Kokiri_0060_0000_Sp00                           #  0.93s | (no MSBT text)
+Saria_Dm_Kokiri_0060_0004_Sp00                           #  0.68s | [Dm_Kokiri_0060_0004_Sp_00]Oh, really? Well, I'm Saria! It's nice to meet you...
+Saria_Dm_Kokiri_0060_0006_Sp00                           #  0.38s | [Dm_Kokiri_0060_0006_Sp_00]I bet he wants Navi to be your companion!
+Saria_Dm_Kokiri_0060_0008_Sp00                           #  0.79s | [Dm_Kokiri_0060_0008_Sp_00]And now, maybe that day has come for you too. That...
+Saria_Dm_Kokiri_0060_0010_Sp00                           #  0.52s | [Dm_Kokiri_0060_0010_Sp_00]A meeting with the Great Deku Tree... So exciting!
+
+# --- Saria / Dm_Kokiri_0145 ---
+Saria_Dm_Kokiri_0145_0001_Sp00                           #  0.40s | [Dm_Kokiri_0145_0001_Sp_00]Oh! Link...
+Saria_Dm_Kokiri_0145_0019_Sp00                           #  0.73s | [Dm_Kokiri_0145_0019_Sp_00]Remember?!
+Saria_Dm_Kokiri_0145_0023_Sp00                           #  1.15s | [Dm_Kokiri_0145_0023_Sp_00]...
+Saria_Dm_Kokiri_0145_0025_Sp00                           #  1.02s | You...[Dm_Kokiri_0145_0025_Sp_00] You're leaving... You're really leaving, ar...
+Saria_Dm_Kokiri_0145_0031_Sp00                           #  0.92s | [Dm_Kokiri_0145_0031_Sp_00]
+Saria_Dm_Kokiri_0145_0032_Sp00                           #  0.59s | [Dm_Kokiri_0145_0032_Sp_00]
+Saria_Dm_Kokiri_0145_0033_Sp00                           #  1.18s | [Dm_Kokiri_0145_0033_Sp_00]
+
+# --- Saria / Dm_MelodyGet_Saria ---
+Saria_Dm_MelodyGet_Saria_0000_Sp00                       #  0.62s | [Dm_MelodyGet_Saria_0000_Sp_00]Huh? ...Link? Link!
+Saria_Dm_MelodyGet_Saria_0001_Sp00                       #  0.75s | [Dm_MelodyGet_Saria_0001_Sp_00]Oh...So that's what happened at Hyrule Castle....
+Saria_Dm_MelodyGet_Saria_0002_Sp00                       #  0.86s | [Dm_MelodyGet_Saria_0002_Sp_00]This is the Sacred Grove. It's my very favorit...
+Saria_Dm_MelodyGet_Saria_0003_Sp00                       #  0.74s | [Dm_MelodyGet_Saria_0003_Sp_00]Hehehe, it's always so fun talking to you, Link.
+Saria_Dm_MelodyGet_Saria_0004_Sp00                       #  0.49s | [Dm_MelodyGet_Saria_0004_Sp_00]Oh, hang on! Let me show you something.
+Saria_Dm_MelodyGet_Saria_0006_Sp00                       #  0.58s | [Dm_MelodyGet_Saria_0006_Sp_00]Let's play our ocarinas together.
+Saria_Dm_MelodyGet_Saria_0007_Sp00                       #  0.78s | [Dm_MelodyGet_Saria_0007_Sp_00]Follow along after me, alright?
+Saria_Dm_MelodyGet_Saria_0008_Sp00                       #  1.08s | [Dm_MelodyGet_Saria_0008_Sp_00]Aw, come on. Let's try it!
+Saria_Dm_MelodyGet_Saria_0010_Sp00                       #  0.54s | [Dm_MelodyGet_Saria_0010_Sp_00]It sounds so lovely! You're a natural.
+Saria_Dm_MelodyGet_Saria_0012_Sp00                       #  0.55s | [Dm_MelodyGet_Saria_0012_Sp_00]Whenever you want to talk to me, just play my...
+Saria_Dm_MelodyGet_Saria_0013_Sp00                       #  0.69s | [Dm_MelodyGet_Saria_0013_Sp_00]You came back!
+
+# --- Sheik / Dm_MelodyGet_Forest ---
+Sheik_Dm_MelodyGet_Forest_0020_Sp00                      #  0.31s | (no MSBT text)
+Sheik_Dm_MelodyGet_Forest_0022_Sp00                      #  0.38s | (no MSBT text)
+
+# --- Sheik / Dm_MelodyGet_Shadow ---
+Sheik_Dm_MelodyGet_Shadow_0020_Sp00                      #  0.31s | (no MSBT text)
+Sheik_Dm_MelodyGet_Shadow_0021_Sp00                      #  0.38s | (no MSBT text)
+
+# --- Sheik / Dm_MelodyGet_Shine ---
+Sheik_Dm_MelodyGet_Shine_0039_Sp00                       #  0.31s | (no MSBT text)
+Sheik_Dm_MelodyGet_Shine_0040_Sp00                       #  0.38s | (no MSBT text)
+
+# --- Sheik / Dm_MelodyGet_Water ---
+Sheik_Dm_MelodyGet_Water_0023_Sp00                       #  0.31s | (no MSBT text)
+Sheik_Dm_MelodyGet_Water_0024_Sp00                       #  0.38s | (no MSBT text)
+
+# --- Talon / Dm_HrlCastle_0020 ---
+Talon_Dm_HrlCastle_0020_0009_Sp00                        #  5.71s | (no MSBT text)
+Talon_Dm_HrlCastle_0020_0010_Sp00                        #  5.83s | (no MSBT text)
+
+# --- Zelda_Child / Dm_HrlCastle_0035 ---
+Zelda_Child_Dm_HrlCastle_0035_0000_Sp00                  #  0.66s | [Dm_HrlCastle_0035_0000_Sp_00]Link...How strange... It's my first time hearin...
+Zelda_Child_Dm_HrlCastle_0035_0001_Sp00                  #  0.65s | [Dm_HrlCastle_0035_0001_Sp_00]This might sound a little odd, but I know you.
+Zelda_Child_Dm_HrlCastle_0035_0003_Sp00                  #  0.96s | [Dm_HrlCastle_0035_0003_Sp_00]I knew it!
+Zelda_Child_Dm_HrlCastle_0035_0005_Sp00                  #  0.96s | [Dm_HrlCastle_0035_0005_Sp_00]I've seen you in my dreams many times, Link.I'v...
+Zelda_Child_Dm_HrlCastle_0035_0008_Sp00                  #  0.45s | [Dm_HrlCastle_0035_0008_Sp_00]So when I saw you, I knew.
+Zelda_Child_Dm_HrlCastle_0035_0012_Sp00                  #  0.48s | [Dm_HrlCastle_0035_0012_Sp_00]However... This legend is kept secret within th...
+
+# --- Zelda_Child / Dm_HrlCastle_0050 ---
+Zelda_Child_Dm_HrlCastle_0050_0001_Sp00                  #  0.79s | [Dm_HrlCastle_0050_0001_Sp_00]The Triforce grants the wish of whoever possess...
+Zelda_Child_Dm_HrlCastle_0050_0004_Sp00                  #  0.56s | [Dm_HrlCastle_0050_0004_Sp_00]My ancestors, the Hyrule royal family, inherite...
+Zelda_Child_Dm_HrlCastle_0050_0009_Sp00                  #  0.64s | [Dm_HrlCastle_0050_0009_Sp_00]The Ocarina of Time!
+Zelda_Child_Dm_HrlCastle_0050_0012_Sp00                  #  0.53s | [Dm_HrlCastle_0050_0012_Sp_00]Oh, I shared quite a lot, didn't I? I hope it w...
+Zelda_Child_Dm_HrlCastle_0050_0023_Sp00                  #  0.66s | [Dm_HrlCastle_0050_0023_Sp_00]Well, you see...
+Zelda_Child_Dm_HrlCastle_0050_0027_Sp00                  #  0.73s | [Dm_HrlCastle_0050_0027_Sp_00]Though he has obeyed my father thus far, it is...
+Zelda_Child_Dm_HrlCastle_0050_0029_Sp00                  #  0.81s | (no MSBT text)
+Zelda_Child_Dm_HrlCastle_0050_0033_Sp00                  #  0.52s | [Dm_HrlCastle_0050_0033_Sp_00]Link, we are the only ones who can protect Hyru...
+Zelda_Child_Dm_HrlCastle_0050_0039_Sp00                  #  0.44s | (no MSBT text)
+
+# --- Zelda_Child / Npc_Hylia_Zelda_Child ---
+Zelda_Child_Dm_HrlCastle_0050_0006_Sp00                  #  0.89s | [Dm_HrlCastle_0050_0006_Sp_00]That's what I have to share about that.

@@ -28,3 +28,7 @@ Check `logs/longshot_log.txt` inside your Longshot game folder:
 ## 5. Mod load priority & `ResourceSizeTable` stacking
 - In Longshot, mods lower in the `Esc` / `F1` -> **Mods** list override earlier ones, and Longshot merges each mod's `ResourceSizeTable` automatically. If another mod replaces the same `.bars.zs` archives, place `MuteCutsceneVA` below it (or check `logs/longshot_log.txt` to see which mod won).
 - On Switch 2 emulators (e.g., Lichii) or `.nup` patchers that do not auto-merge `ResourceSizeTable`, if another mod also ships `System/Resource/ResourceSizeTable.*.rsizetable.zs`, merge the RESTBL tables externally (or build `MuteCutsceneVA` with `--no-restbl` and merge).
+
+## 6. `[warn] Unmatched keep-sp pattern(s)` when building
+- During a full build (without `--cutscene`), `build_mod.py` warns if any active pattern in `data/keep_sp_clips.txt` (or `--keep-sp`) matched zero `NV_*_Dm_*_SpNN.bwav` files.
+- Check for typos, forgotten `_Sp00` suffixes, or non-`Dm_` reaction names (non-`Dm_` `NV_*` clips are already preserved and should not be listed in `keep_sp_clips.txt`). Note that matching is case-sensitive (`fnmatchcase`).

@@ -32,6 +32,13 @@ Cutscene spoken dialogue lives in two places, cleanly separated from classic gam
    - Every cutscene clip in `NV_*` (`672/672`) matches `NV_<prefix>_Dm_<scene>_<id>_Sp<nn>.bwav` (across `8` language-prefixed `NV_<lang>_Custom_<Character>` sets plus non-language-prefixed characters such as `NV_Mido`, `NV_KingZora`, and `NV_Talon`).
    - **Preserved in `Sound/`:** All `8,250` non-`Dm_` `NV_*` NPC reactions, all `573` `Vo_*` Link gameplay grunts/efforts, all `169` `Event_Dm_*.bars.zs` / `167` `Dm_*.bwav` cutscene BGM/SFX mixes, and all `SE_*` SFX.
 
+### MSBT Reaction Tags & Cutscene Grunts
+Inspection of `Mals/USen.Product.110.sarc.zs` (`EventFlowMsg/Dm_*.msbt`, UTF-8 `MsgStdBn`) explains how cutscenes trigger `NV_*` clips:
+- **Fully voiced `_b` text boxes (`757` in `USen`):** Contain **no** `0x0E` reaction/voice tags. Any sighs, gasps, or laughs in those scenes are recorded directly inside the single `Voice/Resource/Stream/*_b.bwav` Opus stream alongside spoken dialogue.
+- **Classic-style tagged cutscene text boxes (`484` in `USen`):** Embed `0x0E` group-4 tags inside the message text:
+  - Generic reaction tags (`TalkPositive_01`, `Think_00`, `LaughS_01`, `Sad_00`, etc.) trigger the preserved non-`Dm_` `NV_*` character clips.
+  - `82` `USen` tags carry `Dm_<scene>_<line>_Sp_<nn>` identifiers that trigger the `NV_*_Dm_*_SpNN.bwav` clips (`102` language-neutral clip IDs total across all characters/scenes, `0.3`–`5.8 s` long; `77` exist in all `8` languages with separate per-language recordings and no shared audio, `14` are unprefixed for Mido/Talon/King Zora, and Impa/Sheik have partial language coverage). Because these `Sp` clips are separate `.bwav` streams, selected non-verbal ones can be kept unmuted via `data/keep_sp_clips.txt` without audio editing.
+
 ## 3. Binary Format Specifications
 
 ### Zstd Dictionaries (`Pack/ZsDic.pack.zs`)

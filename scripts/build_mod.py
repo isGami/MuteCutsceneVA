@@ -12,7 +12,8 @@ Mutes voice-acted cutscene dialogue across two audio layers, plus ResourceSizeTa
      inside `Voice/Resource/*.bars.zs`.
 2. `Sound/Resource/Stream/NV_*_Dm_*_SpNN.bwav` and their matching `is_prefetch`
    BWAV entries inside `Sound/Resource/NV_*.bars.zs` (DSP-ADPCM codec 1): zeroes
-   the sample payload and ADPCM history in-place (`<=` vanilla size).
+   the sample payload and ADPCM history in-place (`<=` vanilla size), unless
+   kept via the `--keep-sp` allowlist (default: `data/keep_sp_clips.txt`).
 3. `System/Resource/ResourceSizeTable.*.rsizetable.zs` (`RESTBL`): raises only
    entries whose modded files exceed their vanilla RESTBL budget (all `891`
    embedded `Voice/Resource/*.bars.zs` in default mode) so Switch 2 emulators
@@ -25,6 +26,7 @@ prompts, non-`Dm_` `NV_*` NPC reactions/grunts, BGM, and SFX) is left untouched.
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import re
@@ -53,12 +55,42 @@ from oot_formats import (
 from opus_silence import OpusChecker, make_silent_packet
 
 CUTSCENE_VA_RE = re.compile(r"^NV_.+_Dm_.+_Sp\d+\.bwav$")
+SP_CLIP_RE = re.compile(r"^NV_(?:[A-Z]{2}[a-z]{2}_)?(?:Custom_)?(?P<id>.+_Dm_.+_Sp\d+)\.bwav$")
 VOICE_CUTSCENE_RE = re.compile(r"^(?:[A-Za-z]{4}_)?EventFlowMsg-_Dm_.+\.bwav$")
 VOICE_BARS_CUTSCENE_RE = re.compile(r"^(?:[A-Za-z]{4}_)?EventFlowMsg-_Dm_.+\.bars\.zs$")
 RESTBL_VERSION_RE = re.compile(r"ResourceSizeTable\.Product\.(\d+)\.")
 CUSTOM_CHAR_RE = re.compile(r"^NV_[A-Za-z]{4}_Custom_(.+?)(?:_\d+.*)?$")
 DEFAULT_OUT = Path("dist/MuteCutsceneVA/romfs")
 DEFAULT_REPORT_DIR = Path("reports")
+DEFAULT_KEEP_SP = Path(__file__).resolve().parent.parent / "data" / "keep_sp_clips.txt"
+
+
+def sp_clip_id(name: str) -> str | None:
+    """Return the language-neutral Sp clip ID for an NV_*_Dm_*_SpNN.bwav filename, or None."""
+    m = SP_CLIP_RE.match(name)
+    return m.group("id") if m else None
+
+
+def load_keep_sp(path: Path) -> list[str]:
+    """Load allowlist glob/exact patterns from a keep_sp_clips.txt file."""
+    patterns: list[str] = []
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.split("#", 1)[0].strip()
+        if line:
+            patterns.append(line)
+    return patterns
+
+
+def keep_sp_match(name: str, patterns: list[str]) -> str | None:
+    """Return the first allowlist pattern matching a clip ID or full filename stem, or None."""
+    if not patterns:
+        return None
+    clip_id = sp_clip_id(name)
+    stem = Path(name).stem
+    for pat in patterns:
+        if (clip_id is not None and fnmatch.fnmatchcase(clip_id, pat)) or fnmatch.fnmatchcase(stem, pat):
+            return pat
+    return None
 
 
 def log(msg: str) -> None:
@@ -92,10 +124,13 @@ def collect_streams(
     cutscene_filters: list[str],
     custom_chars: set[str],
     all_custom: bool,
-) -> tuple[list[Path], list[Path]]:
-    """Return (target_sound_bwavs, preserved_nv_bwavs) from Sound/Resource/Stream/."""
+    keep_patterns: list[str] | None = None,
+) -> tuple[list[Path], list[Path], list[tuple[Path, str, str]]]:
+    """Return (target_sound_bwavs, preserved_nv_bwavs, kept_sp_entries) from Sound/Resource/Stream/."""
     target_va: list[Path] = []
     preserved_nv: list[Path] = []
+    kept_sp: list[tuple[Path, str, str]] = []
+    patterns = keep_patterns or []
     for p in sorted(stream_dir.iterdir()):
         if not p.is_file() or p.suffix != ".bwav":
             continue
@@ -104,11 +139,17 @@ def collect_streams(
             not cutscene_filters or any(f in name for f in cutscene_filters)
         )
         is_custom = matches_custom_chars(name, custom_chars, all_custom)
-        if is_cutscene or is_custom:
+        if is_custom:
             target_va.append(p)
+        elif is_cutscene:
+            matched_pat = keep_sp_match(name, patterns)
+            if matched_pat is not None:
+                kept_sp.append((p, sp_clip_id(name) or p.stem, matched_pat))
+            else:
+                target_va.append(p)
         elif name.startswith("NV_"):
             preserved_nv.append(p)
-    return target_va, preserved_nv
+    return target_va, preserved_nv, kept_sp
 
 
 def collect_voice_streams(
@@ -194,6 +235,17 @@ def main() -> None:
         help="Skip emitting System/Resource/ResourceSizeTable.*.rsizetable.zs (for Longshot-only builds where Longshot merges RESTBL automatically).",
     )
     parser.add_argument(
+        "--keep-sp",
+        type=Path,
+        default=None,
+        help=f"Allowlist file of Sound/ Sp clip IDs/globs to keep unmuted (default: {DEFAULT_KEEP_SP}).",
+    )
+    parser.add_argument(
+        "--no-keep-sp",
+        action="store_true",
+        help="Ignore the Sp clip allowlist and mute every NV_*_Dm_*_SpNN clip.",
+    )
+    parser.add_argument(
         "--sync-to",
         type=Path,
         default=None,
@@ -229,17 +281,21 @@ def main() -> None:
     t0 = time.monotonic()
     cutscene_filters = [c.strip() for c in (args.cutscene or "").split(",") if c.strip()]
     custom_chars = {c.strip() for c in args.custom_chars.split(",") if c.strip()}
-    mode_parts = []
-    if cutscene_filters:
-        mode_parts.append(f"cutscene={','.join(cutscene_filters)}")
-    if custom_chars:
-        mode_parts.append(f"custom_chars={','.join(sorted(custom_chars))}")
-    if args.all_custom:
-        mode_parts.append("all_custom")
-    mode_label = " ".join(mode_parts) if mode_parts else "full"
-    log(f"Building MuteCutsceneVA ({mode_label})")
-    log(f"  OOT_ROMFS (read-only): {romfs}")
-    log(f"  Staged output:         {out_romfs}")
+
+    keep_sp_path: Path | None = None
+    keep_patterns: list[str] = []
+    if args.no_keep_sp:
+        pass
+    elif args.keep_sp is not None:
+        if not args.keep_sp.is_file():
+            raise SystemExit(f"Allowlist file not found: {args.keep_sp}")
+        keep_sp_path = args.keep_sp
+        keep_patterns = load_keep_sp(keep_sp_path)
+    elif DEFAULT_KEEP_SP.is_file():
+        keep_sp_path = DEFAULT_KEEP_SP
+        keep_patterns = load_keep_sp(keep_sp_path)
+    else:
+        log(f"  [note] Default allowlist not found ({DEFAULT_KEEP_SP}); keeping 0 Sp clips.")
 
     stream_dir = romfs / "Sound" / "Resource" / "Stream"
     voice_res_dir = romfs / "Voice" / "Resource"
@@ -250,20 +306,45 @@ def main() -> None:
     ]
     preserved_voice_bars_count = len(list(voice_res_dir.glob("*.bars.zs"))) - len(target_voice_bars)
     target_voice_va, preserved_voice_va = collect_voice_streams(voice_stream_dir, cutscene_filters)
-    target_sound_va, preserved_nv = collect_streams(stream_dir, cutscene_filters, custom_chars, args.all_custom)
+    target_sound_va, preserved_nv, kept_sp = collect_streams(
+        stream_dir, cutscene_filters, custom_chars, args.all_custom, keep_patterns
+    )
+
+    matched_patterns = {pat for _, _, pat in kept_sp}
+    unmatched_patterns = [pat for pat in keep_patterns if pat not in matched_patterns]
+
+    mode_parts = []
+    if cutscene_filters:
+        mode_parts.append(f"cutscene={','.join(cutscene_filters)}")
+    if custom_chars:
+        mode_parts.append(f"custom_chars={','.join(sorted(custom_chars))}")
+    if args.all_custom:
+        mode_parts.append("all_custom")
+    if kept_sp:
+        mode_parts.append(f"keep_sp={len(kept_sp)}")
+    mode_label = " ".join(mode_parts) if mode_parts else "full"
+    log(f"Building MuteCutsceneVA ({mode_label})")
+    log(f"  OOT_ROMFS (read-only): {romfs}")
+    log(f"  Staged output:         {out_romfs}")
+    if keep_sp_path is not None:
+        log(f"  Sp allowlist:          {keep_sp_path} ({len(keep_patterns)} pattern(s))")
+
+    if unmatched_patterns and not cutscene_filters:
+        log(f"  [warn] Unmatched keep-sp pattern(s): {', '.join(unmatched_patterns)}")
+
     if args.voice_mode == "embed":
-        if not target_voice_bars and not target_sound_va:
+        if not target_voice_bars and not target_sound_va and not kept_sp:
             raise SystemExit(f"No matching cutscene VA archives/streams found (filter={args.cutscene!r}).")
         log(
             f"Found {len(target_voice_bars)} target Voice/ .bars.zs archive(s) ({preserved_voice_bars_count} preserved) "
-            f"and {len(target_sound_va)} target Sound/ NV_ stream(s) ({len(preserved_nv)} NV_ preserved)."
+            f"and {len(target_sound_va)} target Sound/ NV_ stream(s) ({len(preserved_nv)} NV_ preserved, {len(kept_sp)} Sp kept)."
         )
     else:
-        if not target_voice_va and not target_sound_va:
+        if not target_voice_va and not target_sound_va and not kept_sp:
             raise SystemExit(f"No matching cutscene VA streams found (filter={args.cutscene!r}).")
         log(
             f"Found {len(target_voice_va)} target Voice/ stream(s) ({len(preserved_voice_va)} preserved) and "
-            f"{len(target_sound_va)} target Sound/ NV_ stream(s) ({len(preserved_nv)} NV_ preserved)."
+            f"{len(target_sound_va)} target Sound/ NV_ stream(s) ({len(preserved_nv)} NV_ preserved, {len(kept_sp)} Sp kept)."
         )
 
     # Clean staged output so stale files from previous runs do not linger
@@ -602,9 +683,20 @@ def main() -> None:
 
     # 4. Write audit reports
     args.report_dir.mkdir(parents=True, exist_ok=True)
+    kept_sp_audit = [
+        {
+            "rel_path": f"Sound/Resource/Stream/{p.name}",
+            "clip_id": cid,
+            "pattern": pat,
+        }
+        for p, cid, pat in kept_sp
+    ]
     audit_data = {
         "mode": mode_label,
         "cutscene_filters": cutscene_filters,
+        "keep_sp_file": str(keep_sp_path) if keep_sp_path is not None else None,
+        "keep_sp_patterns": keep_patterns,
+        "keep_sp_unmatched_patterns": unmatched_patterns,
         "elapsed_sec": round(time.monotonic() - t0, 2),
         "summary": {
             "muted_voice_streams": len(muted_voice_audit),
@@ -612,6 +704,7 @@ def main() -> None:
             "patched_voice_bars_archives": len(patched_voice_bars_audit),
             "preserved_voice_streams": len(preserved_voice_va),
             "muted_sound_streams": len(muted_sound_audit),
+            "kept_sp_streams": len(kept_sp_audit),
             "patched_bars_archives": len(patched_bars_audit),
             "preserved_nv_streams": len(preserved_nv),
             "restbl_emitted": restbl_audit["emitted"],
@@ -624,6 +717,7 @@ def main() -> None:
         "preserved_voice_streams": [f"Voice/Resource/Stream/{p.name}" for p in preserved_voice_va],
         "patched_bars_archives": patched_bars_audit,
         "muted_sound_streams": muted_sound_audit,
+        "kept_sp_streams": kept_sp_audit,
         "preserved_nv_streams": [f"Sound/Resource/Stream/{p.name}" for p in preserved_nv],
     }
     json_path = args.report_dir / "build_audit.json"
@@ -635,6 +729,7 @@ def main() -> None:
         f"Muted Voice/ .bwav streams: {len(muted_voice_audit)} (skipped damaged: {len(skipped_damaged_voice)}, preserved: {len(preserved_voice_va)})",
         f"Patched Voice/ .bars.zs archives: {len(patched_voice_bars_audit)}",
         f"Muted Sound/ NV_ .bwav streams: {len(muted_sound_audit)} (preserved: {len(preserved_nv)})",
+        f"Kept Sound/ Sp clips (allowlist): {len(kept_sp_audit)} (file: {keep_sp_path or 'none'})",
         f"Patched Sound/ NV_*.bars.zs archives: {len(patched_bars_audit)}",
         (
             f"ResourceSizeTable (RESTBL): emitted={restbl_audit['emitted']} "
@@ -687,6 +782,13 @@ def main() -> None:
         txt_lines.append(f"  {s['rel_path']} ({s['mod_bytes']} bytes)")
     if len(muted_sound_audit) > 50:
         txt_lines.append(f"  ... ({len(muted_sound_audit) - 50} more in build_audit.json)")
+    if kept_sp_audit:
+        txt_lines.append("")
+        txt_lines.append("Kept Sound/ Sp clips (first 50):")
+        for s in kept_sp_audit[:50]:
+            txt_lines.append(f"  {s['rel_path']} (id={s['clip_id']}, pattern={s['pattern']})")
+        if len(kept_sp_audit) > 50:
+            txt_lines.append(f"  ... ({len(kept_sp_audit) - 50} more in build_audit.json)")
 
     txt_path = args.report_dir / "build_audit.txt"
     txt_path.write_text("\n".join(txt_lines) + "\n")
